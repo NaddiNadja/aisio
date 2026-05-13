@@ -4,13 +4,16 @@
 #include <stdint.h>
 
 #include <libxal.h>
+#include <libxnvme_ipc.h>
 
 #define HOMI_MAX_CONNECTS   8
 #define HOMID_DEVURI_MAXLEN 256
 #define HOMI_PROTO_MAX_FDS  3
 
 enum homi_msg_type {
-	HOMI_MSG_TYPE_XAL_CONNECT = 1, ///< Request xal pool info for a device
+	HOMI_MSG_TYPE_XAL_CONNECT  = 1, ///< Request xal pool info for a device
+	HOMI_MSG_TYPE_DEV_CONNECT  = 2, ///< Request a device metadata shell for a device
+	HOMI_MSG_TYPE_QUEUE_CONNECT = 3, ///< Request a pre-provisioned queue pair for a device
 };
 
 struct homi_req_xal_connect {
@@ -21,6 +24,28 @@ struct homi_res_xal_connect {
 	int err;
 	struct xal_sb sb;
 	char shm_name[64];
+};
+
+struct homi_req_dev_connect {
+	char dev_uri[HOMID_DEVURI_MAXLEN];
+};
+
+/* Note: xnvme_dev_ipc is ~18 KB; allocate homi_res_dev_connect on the heap. */
+struct homi_res_dev_connect {
+	int err;
+	struct xnvme_dev_ipc ipc;
+};
+
+struct homi_req_queue_connect {
+	char dev_uri[HOMID_DEVURI_MAXLEN];
+	uint16_t capacity;
+};
+
+/* Note: allocate homi_res_queue_connect on the heap. */
+struct homi_res_queue_connect {
+	int err;
+	struct xnvme_queue_ipc queue_ipc;
+	struct xnvme_heap_ipc client_heap;
 };
 
 struct homi_msg_header {
