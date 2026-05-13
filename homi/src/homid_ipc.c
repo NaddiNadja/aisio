@@ -109,7 +109,7 @@ worker(void *arg)
 
 	free(wargs);
 
-	err = homi_proto_socket_read(sock_fd, &hdr, &payload);
+	err = homi_proto_socket_read(sock_fd, &hdr, &payload, NULL, 0, NULL);
 	if (err) {
 		homid_log(LOG_ERR, "Failed: homi_proto_socket_read(hdr); err(%d)", err);
 		goto exit;
@@ -139,7 +139,7 @@ worker(void *arg)
 		memcpy(res.shm_name, device->shm_name, sizeof(res.shm_name));
 
 send_response:
-		err = homi_proto_socket_write(sock_fd, &hdr, &res, sizeof(res));
+		err = homi_proto_socket_write(sock_fd, &hdr, &res, sizeof(res), NULL, 0);
 		if (err) {
 			homid_log(LOG_ERR, "Failed: homi_proto_socket_write(); err(%d)", err);
 		}

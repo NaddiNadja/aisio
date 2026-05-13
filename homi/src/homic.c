@@ -174,7 +174,7 @@ homic_connect_xal(char *dev_uri, struct xal **out)
 	strncpy(req.dev_uri, dev_uri, sizeof(req.dev_uri) - 1);
 	hdr.type = HOMI_MSG_TYPE_XAL_CONNECT;
 
-	err = homi_proto_socket_write(sock_fd, &hdr, &req, sizeof(req));
+	err = homi_proto_socket_write(sock_fd, &hdr, &req, sizeof(req), NULL, 0);
 	if (err) {
 		fprintf(stderr, "Failed: homi_proto_socket_write(); err(%d)\n", err);
 		goto failed;

@@ -7,6 +7,7 @@
 
 #define HOMI_MAX_CONNECTS   8
 #define HOMID_DEVURI_MAXLEN 256
+#define HOMI_PROTO_MAX_FDS  3
 
 enum homi_msg_type {
 	HOMI_MSG_TYPE_XAL_CONNECT = 1, ///< Request xal pool info for a device
@@ -34,27 +35,41 @@ struct homi_msg_header {
  * is heap-allocated and returned via *buf; the caller is responsible for
  * freeing it. *buf is set to NULL if payload_len is zero.
  *
- * @param sock_fd  File descriptor of the connected socket.
- * @param hdr      Output: populated with the received message header.
- * @param buf      Output: allocated buffer containing the payload, or NULL.
- * @return         0 on success, negative errno on failure.
+ * If the message carries SCM_RIGHTS ancillary data, up to max_fds file
+ * descriptors are stored in fds and the count is written to *nfds_out. Any
+ * received file descriptors that exceed max_fds are closed immediately. Pass
+ * fds=NULL / max_fds=0 if the caller does not expect file descriptors.
+ *
+ * @param sock_fd   File descriptor of the connected socket.
+ * @param hdr       Output: populated with the received message header.
+ * @param buf       Output: allocated buffer containing the payload, or NULL.
+ * @param fds       Output: received file descriptors, or NULL.
+ * @param max_fds   Capacity of fds; pass 0 if fds is NULL.
+ * @param nfds_out  Output: number of file descriptors written to fds, or NULL.
+ * @return          0 on success, negative errno on failure.
  */
 int
-homi_proto_socket_read(int sock_fd, struct homi_msg_header *hdr, void **buf);
+homi_proto_socket_read(int sock_fd, struct homi_msg_header *hdr, void **buf,
+		       int *fds, int max_fds, int *nfds_out);
 
 /**
  * Write a message to a socket.
  *
  * Sends hdr followed by buf as a single framed message. Sets hdr->payload_len
- * to buf_len before writing.
+ * to buf_len before writing. If nfds is non-zero, the file descriptors in fds
+ * are attached as SCM_RIGHTS ancillary data on the header send. Pass
+ * fds=NULL / nfds=0 to send without ancillary data.
  *
- * @param sock_fd   File descriptor of the connected socket.
- * @param hdr       Message header; payload_len will be overwritten with buf_len.
- * @param buf       Payload to send.
- * @param buf_len   Length of the payload in bytes.
- * @return          0 on success, negative errno on failure.
+ * @param sock_fd  File descriptor of the connected socket.
+ * @param hdr      Message header; payload_len will be overwritten with buf_len.
+ * @param buf      Payload to send.
+ * @param buf_len  Length of the payload in bytes.
+ * @param fds      File descriptors to attach, or NULL.
+ * @param nfds     Number of file descriptors in fds; pass 0 if fds is NULL.
+ * @return         0 on success, negative errno on failure.
  */
 int
-homi_proto_socket_write(int sock_fd, struct homi_msg_header *hdr, void *buf, size_t buf_len);
+homi_proto_socket_write(int sock_fd, struct homi_msg_header *hdr, void *buf, size_t buf_len,
+			int *fds, int nfds);
 
 #endif /* HOMI_PROTO_H */
