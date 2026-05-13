@@ -2,11 +2,20 @@
 #define HOMID_XAL_H
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #include <homi_proto.h>
 #include <homid_opts.h>
 
 struct homid;
+
+struct homid_provisioned_queue {
+	struct xnvme_queue *queue;
+	void *client_heap;
+	int queue_heap_fd;
+	int bar_fd;
+	int client_heap_fd;
+};
 
 struct homid_device {
 	struct xnvme_dev *dev;
@@ -14,6 +23,8 @@ struct homid_device {
 	bool watching;
 	char uri[HOMID_DEVURI_MAXLEN];
 	char shm_name[64];
+	struct homid_provisioned_queue *queues;
+	size_t nqueues;
 };
 
 /**

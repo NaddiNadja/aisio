@@ -110,6 +110,17 @@ homid_device_close(unsigned int ndevs, struct homid_device *devices)
 			continue;
 		}
 
+		for (size_t j = 0; j < dev->nqueues; j++) {
+			struct homid_provisioned_queue *pq = &dev->queues[j];
+
+			xnvme_queue_term(pq->queue);
+			xnvme_client_heap_free(pq->client_heap);
+			close(pq->queue_heap_fd);
+			close(pq->bar_fd);
+			close(pq->client_heap_fd);
+		}
+		free(dev->queues);
+
 		if (dev->watching) {
 			xal_stop_watching_filesystem(dev->xal);
 		}
