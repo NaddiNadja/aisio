@@ -2,6 +2,8 @@
 #define HOMIC_H
 
 #include <libxal.h>
+#include <libxnvme.h>
+#include <libxnvme_ipc.h>
 
 /**
  * Connect to the homid daemon.
@@ -50,5 +52,39 @@ homic_connect_xal(char *dev_uri, struct xal **out);
  */
 int
 homic_xal_wait(struct xal *xal);
+
+/**
+ * Request device metadata from the daemon.
+ *
+ * Sends a DEV_CONNECT request for dev_uri and constructs a shell xnvme_dev
+ * from the returned metadata blob. The shell is sufficient for command
+ * construction but cannot open queues or issue admin commands directly.
+ * Close it with xnvme_dev_close() when done.
+ *
+ * @param dev_uri  URI of the device to connect to.
+ * @param out      Output: shell xnvme_dev backed by daemon metadata.
+ * @return         0 on success, negative errno on failure.
+ */
+int
+homic_dev_connect(char *dev_uri, struct xnvme_dev **out);
+
+/**
+ * Request a pre-provisioned NVMe queue pair from the daemon.
+ *
+ * Sends a QUEUE_CONNECT request, receives the queue descriptor and three file
+ * descriptors via SCM_RIGHTS, and calls xnvme_queue_from_ipc() to map the
+ * shared SQ/CQ memory and wire up the uPCIe async backend on shell_dev.
+ * After this call, I/O can be submitted through the returned queue without
+ * daemon involvement. Close the queue with xnvme_queue_term() when done.
+ *
+ * @param dev_uri   URI of the device to connect to.
+ * @param capacity  Requested queue depth.
+ * @param shell_dev Shell device created by homic_dev_connect().
+ * @param out       Output: reconstructed xnvme_queue ready for async I/O.
+ * @return          0 on success, negative errno on failure.
+ */
+int
+homic_queue_connect(char *dev_uri, uint16_t capacity, struct xnvme_dev *shell_dev,
+		    struct xnvme_queue **out);
 
 #endif /* HOMIC_H */

@@ -336,3 +336,142 @@ homic_xal_wait(struct xal *xal)
 
 	return err;
 }
+
+int
+homic_dev_connect(char *dev_uri, struct xnvme_dev **out)
+{
+	struct homi_msg_header hdr = {0};
+	struct homi_req_dev_connect req = {0};
+	struct homi_res_dev_connect *res = NULL;
+	struct xnvme_dev *dev;
+	int sock_fd = -1, err;
+
+	if (!g_homic_client) {
+		err = -ENOTCONN;
+		fprintf(stderr, "Failed: No connection, please call homic_connect(); err(%d)\n", err);
+		return err;
+	}
+
+	sock_fd = _connect(g_homic_client->socket_path);
+	if (sock_fd < 0) {
+		err = sock_fd;
+		fprintf(stderr, "Failed: _connect(%s); err(%d)\n", g_homic_client->socket_path, err);
+		goto failed;
+	}
+
+	strncpy(req.dev_uri, dev_uri, sizeof(req.dev_uri) - 1);
+	hdr.type = HOMI_MSG_TYPE_DEV_CONNECT;
+
+	err = homi_proto_socket_write(sock_fd, &hdr, &req, sizeof(req), NULL, 0);
+	if (err) {
+		fprintf(stderr, "Failed: homi_proto_socket_write(); err(%d)\n", err);
+		goto failed;
+	}
+
+	err = homi_proto_socket_read(sock_fd, &hdr, (void **)&res, NULL, 0, NULL);
+	if (err) {
+		fprintf(stderr, "Failed: homi_proto_socket_read(); err(%d)\n", err);
+		goto failed;
+	}
+	if (res->err) {
+		err = res->err;
+		fprintf(stderr, "Failed: daemon dev_connect error; err(%d)\n", err);
+		goto failed;
+	}
+
+	close(sock_fd);
+
+	dev = xnvme_dev_import(&res->ipc);
+	if (!dev) {
+		err = -errno;
+		free(res);
+		return err;
+	}
+
+	free(res);
+	*out = dev;
+	return 0;
+
+failed:
+	free(res);
+	if (sock_fd >= 0) {
+		close(sock_fd);
+	}
+	return err;
+}
+
+int
+homic_queue_connect(char *dev_uri, uint16_t capacity, struct xnvme_dev *shell_dev,
+		    struct xnvme_queue **out)
+{
+	struct homi_msg_header hdr = {0};
+	struct homi_req_queue_connect req = {0};
+	struct homi_res_queue_connect *res = NULL;
+	int fds[HOMI_PROTO_MAX_FDS];
+	int nfds = 0, sock_fd = -1, err;
+
+	if (!g_homic_client) {
+		err = -ENOTCONN;
+		fprintf(stderr, "Failed: No connection, please call homic_connect(); err(%d)\n", err);
+		return err;
+	}
+
+	sock_fd = _connect(g_homic_client->socket_path);
+	if (sock_fd < 0) {
+		err = sock_fd;
+		fprintf(stderr, "Failed: _connect(%s); err(%d)\n", g_homic_client->socket_path, err);
+		goto failed;
+	}
+
+	strncpy(req.dev_uri, dev_uri, sizeof(req.dev_uri) - 1);
+	req.capacity = capacity;
+	hdr.type = HOMI_MSG_TYPE_QUEUE_CONNECT;
+
+	err = homi_proto_socket_write(sock_fd, &hdr, &req, sizeof(req), NULL, 0);
+	if (err) {
+		fprintf(stderr, "Failed: homi_proto_socket_write(); err(%d)\n", err);
+		goto failed;
+	}
+
+	err = homi_proto_socket_read(sock_fd, &hdr, (void **)&res, fds, HOMI_PROTO_MAX_FDS, &nfds);
+	if (err) {
+		fprintf(stderr, "Failed: homi_proto_socket_read(); err(%d)\n", err);
+		goto failed;
+	}
+	if (res->err) {
+		err = res->err;
+		fprintf(stderr, "Failed: daemon queue_connect error; err(%d)\n", err);
+		goto failed;
+	}
+	if (nfds != HOMI_PROTO_MAX_FDS) {
+		err = -EPROTO;
+		fprintf(stderr, "Failed: expected %d fds, got %d; err(%d)\n",
+			HOMI_PROTO_MAX_FDS, nfds, err);
+		goto failed;
+	}
+
+	close(sock_fd);
+	sock_fd = -1;
+
+	/* xnvme_queue_from_ipc consumes all three fds regardless of outcome. */
+	err = xnvme_queue_from_ipc(shell_dev, &res->queue_ipc, &res->client_heap,
+				   fds[0], fds[1], fds[2], out);
+	if (err) {
+		fprintf(stderr, "Failed: xnvme_queue_from_ipc(); err(%d)\n", err);
+		free(res);
+		return err;
+	}
+
+	free(res);
+	return 0;
+
+failed:
+	free(res);
+	for (int i = 0; i < nfds; i++) {
+		close(fds[i]);
+	}
+	if (sock_fd >= 0) {
+		close(sock_fd);
+	}
+	return err;
+}
