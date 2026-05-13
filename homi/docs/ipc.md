@@ -60,3 +60,39 @@ derived from `shm_name`:
 
 The client must not read from the inode or extent pools while the dirty flag is
 `true`. See [client.md](client.md) for how to wait safely.
+
+### `HOMI_MSG_TYPE_DEV_CONNECT` (2)
+
+Requests a serialised snapshot of an open device's metadata (geometry,
+identity, controller and namespace identify data). No file descriptors are
+transferred.
+
+| Direction | Type | Description |
+|-----------|------|-------------|
+| Request   | `homi_req_dev_connect` | `char dev_uri[256]` — device URI as configured in `homi.conf` |
+| Response  | `homi_res_dev_connect` | `err` (negative errno on failure), `xnvme_dev_ipc` (flat metadata blob) |
+
+On success (`res.err == 0`), the client passes `res.ipc` to `xnvme_dev_import()`
+to construct a shell `xnvme_dev`. The shell provides geometry and namespace
+information for command construction but cannot issue admin commands or
+initialise queues.
+
+### `HOMI_MSG_TYPE_QUEUE_CONNECT` (3)
+
+Requests a pre-provisioned NVMe I/O queue pair. The daemon allocates a
+dedicated SQ/CQ hugepage region, issues Create I/O CQ and Create I/O SQ admin
+commands, and sends three file descriptors alongside the response via
+`SCM_RIGHTS`.
+
+| Direction | Type | Description |
+|-----------|------|-------------|
+| Request   | `homi_req_queue_connect` | `char dev_uri[256]`, `uint16_t capacity` — requested queue depth |
+| Response  | `homi_res_queue_connect` | `err` (negative errno on failure), `xnvme_queue_ipc` (queue descriptor), `xnvme_heap_ipc client_heap` (physical address map for client DMA heap) |
+| Ancillary fds | `SCM_RIGHTS[3]` | `queue_heap_fd` (SQ/CQ hugepage memfd), `bar_fd` (BAR0 memfd for doorbells), `client_heap_fd` (client DMA heap memfd) |
+
+The three fds are only sent on success (`res.err == 0`). On failure no fds are
+attached.
+
+The client passes all three fds together with `res.queue_ipc` and
+`res.client_heap` to `xnvme_queue_from_ipc()` to reconstruct the queue. All
+fds are consumed by that call regardless of outcome.

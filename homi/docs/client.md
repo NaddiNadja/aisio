@@ -1,12 +1,13 @@
 # Using the HOMI client library
 
 The `libhomic` library lets applications access the xal extent trees that
-`homid` maintains. All functions are declared in `homic.h`.
+`homid` maintains and perform direct NVMe I/O via daemon-provisioned queue
+pairs. All functions are declared in `homic.h`.
 
 ## Prerequisites
 
 - `homid` is running and has the target device configured in `homi.conf`.
-- Link with `-lhomic`.
+- Link with `-lhomic -lxnvme`.
 
 ## Lifecycle
 
@@ -68,6 +69,66 @@ homic_disconnect();
 
 Unmaps all shared memory segments and frees the global client state. Safe to
 call even if `homic_connect_xal` was never called.
+
+## Direct NVMe I/O via pre-provisioned queues
+
+For use cases that need to submit NVMe commands directly without going through
+the kernel, `homid` can provision I/O queue pairs on behalf of the client. The
+daemon owns the controller exclusively; clients share SQ/CQ memory via file
+descriptors.
+
+### 1. Get device metadata
+
+```c
+struct xnvme_dev *dev;
+
+err = homic_dev_connect("/dev/nvme0n1", &dev);
+```
+
+Sends a `DEV_CONNECT` request and constructs a shell `xnvme_dev` from the
+returned metadata snapshot. The shell knows the device geometry and namespace
+identity but has no backend attached; it is sufficient for constructing NVMe
+commands. Close it with `xnvme_dev_close(dev)` when done.
+
+### 2. Obtain a queue pair
+
+```c
+struct xnvme_queue *queue;
+
+err = homic_queue_connect("/dev/nvme0n1", 63, dev, &queue);
+```
+
+Sends a `QUEUE_CONNECT` request. The daemon allocates a dedicated hugepage
+region for the SQ and CQ, issues the Create I/O CQ and Create I/O SQ admin
+commands, and sends three file descriptors alongside the response via
+`SCM_RIGHTS`. The client library maps the shared memory and calls
+`xnvme_queue_from_ipc()` internally, wiring up the uPCIe async backend on
+`dev`. After this call, `queue` is ready for async I/O.
+
+### 3. Submit I/O
+
+```c
+void *buf = xnvme_buf_alloc(dev, nbytes);
+struct xnvme_cmd_ctx *ctx = xnvme_queue_get_cmd_ctx(queue);
+
+xnvme_nvm_read(dev, ctx, slba, nlb, buf, NULL);
+xnvme_queue_poke(queue, 0);
+```
+
+The daemon is not involved on the data path. All I/O is submitted directly via
+the shared doorbells.
+
+### 4. Teardown
+
+```c
+xnvme_queue_term(queue);
+xnvme_dev_close(dev);
+homic_disconnect();
+```
+
+`xnvme_queue_term` unmaps the shared SQ/CQ memory and BAR region and frees the
+client-local request pool. The queue pair itself remains registered with the
+controller until the daemon shuts down or issues a Delete I/O SQ/CQ command.
 
 ## Error handling
 
