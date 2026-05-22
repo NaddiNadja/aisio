@@ -68,7 +68,11 @@ Key elements of the HOMI reference implementation that are under development
 include a persistent host-resident control-plane daemon, dynamic provisioning
 and assignment of NVMe queue resources across initiators, centralized caching of
 file-to-block mappings, and coordinated lifecycle and policy management spanning
-all I/O paths. Unlike the PoC, the reference implementation is designed to
+all I/O paths. File-to-block mappings are pre-loaded into POSIX shared memory
+by the daemon and served to clients through a Unix domain socket IPC. Client
+applications access the extent tree via ``libhomic``, which handles shared
+memory attachment and provides a read-only xal view without daemon involvement
+on the lookup path. Unlike the PoC, the reference implementation is designed to
 support both software-mediated and hardware-assisted multipath configurations
 within a unified orchestration framework.
 
@@ -79,7 +83,10 @@ focuses on incrementally integrating existing PoC components into this broader
 HOMI framework.
 
 Information about building, installing and managing HOMI is found in the README
-file in the ``homi`` directory of the AiSIO reference implementation.
+file in the ``homi`` directory of the AiSIO reference implementation. The IPC
+protocol between the daemon and its clients is documented in
+``homi/docs/ipc.md``, and ``homi/docs/client.md`` describes how to use the
+``libhomic`` client library.
 
 ### uPCIe
 
